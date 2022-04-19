@@ -1,3 +1,5 @@
+{-# LANGUAGE CPP #-}
+
 module TextBuilderDev
   ( TextBuilder,
 
@@ -82,7 +84,11 @@ import qualified Data.Text.IO as Text
 import qualified Data.Text.Internal as C
 import qualified DeferredFolds.Unfoldr as Unfoldr
 import TextBuilderDev.Prelude hiding (intercalate, length, null)
+#if MIN_VERSION_text(2,0,0)
+import qualified TextBuilderDev.UTF8 as UTF8
+#else
 import qualified TextBuilderDev.UTF16 as D
+#endif
 
 -- *
 
@@ -206,6 +212,59 @@ char :: Char -> TextBuilder
 char x =
   unicodeCodePoint (ord x)
 
+#if MIN_VERSION_text(2,0,0)
+
+{-# INLINE unicodeCodePoint #-}
+unicodeCodePoint :: Int -> TextBuilder
+unicodeCodePoint cp =
+  UTF8.unicodeCodePoint cp utf8CodeUnits1 utf8CodeUnits2 utf8CodeUnits3 utf8CodeUnits4
+
+{-# INLINE utf8CodeUnits1 #-}
+utf8CodeUnits1 :: Word8 -> TextBuilder
+utf8CodeUnits1 cu0 = TextBuilder action 1 1
+  where
+    action = Action $ \array offset ->
+      B.unsafeWrite array offset cu0
+
+{-# INLINE utf8CodeUnits2 #-}
+utf8CodeUnits2 :: Word8 -> Word8 -> TextBuilder
+utf8CodeUnits2 cu0 cu1 = TextBuilder action 2 1
+  where
+    action = Action $ \array offset -> do
+      B.unsafeWrite array offset cu0
+      B.unsafeWrite array (offset + 1) cu1
+
+{-# INLINE utf8CodeUnits3 #-}
+utf8CodeUnits3 :: Word8 -> Word8 -> Word8 -> TextBuilder
+utf8CodeUnits3 cu0 cu1 cu2 = TextBuilder action 3 1
+  where
+    action = Action $ \array offset -> do
+      B.unsafeWrite array offset cu0
+      B.unsafeWrite array (offset + 1) cu1
+      B.unsafeWrite array (offset + 2) cu2
+
+{-# INLINE utf8CodeUnits4 #-}
+utf8CodeUnits4 :: Word8 -> Word8 -> Word8 -> Word8 -> TextBuilder
+utf8CodeUnits4 cu0 cu1 cu2 cu3 = TextBuilder action 4 1
+  where
+    action = Action $ \array offset -> do
+      B.unsafeWrite array offset cu0
+      B.unsafeWrite array (offset + 1) cu1
+      B.unsafeWrite array (offset + 2) cu2
+      B.unsafeWrite array (offset + 3) cu3
+
+{-# INLINE utf16CodeUnits1 #-}
+utf16CodeUnits1 :: Word16 -> TextBuilder
+utf16CodeUnits1 cu0 = unicodeCodePoint (fromIntegral cu0)
+
+{-# INLINE utf16CodeUnits2 #-}
+utf16CodeUnits2 :: Word16 -> Word16 -> TextBuilder
+utf16CodeUnits2 cu0 cu1 = unicodeCodePoint cp
+  where
+    cp = ((fromIntegral cu0 .&. 0x3ff) `shiftL` 10 .|. (fromIntegral cu1 .&. 0x3ff)) + 0x10000
+
+#else
+
 -- | Unicode code point
 {-# INLINE unicodeCodePoint #-}
 unicodeCodePoint :: Int -> TextBuilder
@@ -256,6 +315,8 @@ utf8CodeUnits4 :: Word8 -> Word8 -> Word8 -> Word8 -> TextBuilder
 utf8CodeUnits4 unit1 unit2 unit3 unit4 =
   D.utf8CodeUnits4 unit1 unit2 unit3 unit4 utf16CodeUnits1 utf16CodeUnits2
 
+#endif
+
 -- | ASCII byte string
 {-# INLINEABLE asciiByteString #-}
 asciiByteString :: ByteString -> TextBuilder
@@ -278,7 +339,11 @@ text text@(C.Text array offset length) =
   where
     action =
       Action $ \builderArray builderOffset -> do
+#if MIN_VERSION_text(2,0,0)
+        B.copyI length builderArray builderOffset array offset
+#else
         B.copyI builderArray builderOffset array offset (builderOffset + length)
+#endif
 
 -- | String
 {-# INLINE string #-}
